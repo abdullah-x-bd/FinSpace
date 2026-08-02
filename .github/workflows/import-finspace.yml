@@ -33,11 +33,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          rm -rf /tmp/finspace-source
+          mkdir -p /tmp/finspace-source
+          cp -a upstream-pdrs/finspace/. /tmp/finspace-source/
+          rm -rf upstream-pdrs
           rsync -a --delete \
             --exclude '.git/' \
             --exclude '.github/' \
-            upstream-pdrs/finspace/ ./
-          rm -rf upstream-pdrs
+            /tmp/finspace-source/ ./
 
           python - <<'PY'
           from pathlib import Path
