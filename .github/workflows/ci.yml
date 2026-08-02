@@ -83,7 +83,7 @@ jobs:
         run: >-
           pytest
           --cov=finspace
-          --cov-omit='src/finspace/adapters/*'
+          --cov-config=.coveragerc-core
           --cov-report=term-missing
           --cov-fail-under=75
 
