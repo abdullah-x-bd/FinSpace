@@ -1,0 +1,87 @@
+name: Import FinSpace from PDRS
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/import-finspace.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out destination repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check out the merged FinSpace source
+        uses: actions/checkout@v4
+        with:
+          repository: abdullah-x-bd/PDRS
+          ref: 4caf79df0d7eff4f8ca55822160b7a444f7e11e2
+          path: upstream-pdrs
+
+      - name: Materialize the standalone repository
+        shell: bash
+        run: |
+          set -euo pipefail
+          rsync -a --delete \
+            --exclude '.git/' \
+            --exclude '.github/' \
+            upstream-pdrs/finspace/ ./
+          rm -rf upstream-pdrs
+
+          python - <<'PY'
+          from pathlib import Path
+
+          replacements = {
+              "https://github.com/abdullah-x-bd/PDRS/tree/main/finspace": "https://github.com/abdullah-x-bd/FinSpace",
+              "https://github.com/abdullah-x-bd/PDRS/tree/main/finspace/docs": "https://github.com/abdullah-x-bd/FinSpace/tree/main/docs",
+              "https://github.com/abdullah-x-bd/PDRS/issues": "https://github.com/abdullah-x-bd/FinSpace/issues",
+              "git+https://github.com/abdullah-x-bd/PDRS.git#subdirectory=finspace": "git+https://github.com/abdullah-x-bd/FinSpace.git",
+              "git clone https://github.com/abdullah-x-bd/PDRS.git\ncd PDRS\npip install -e .\npip install -e \"./finspace[dev,all]\"": "git clone https://github.com/abdullah-x-bd/FinSpace.git\ncd FinSpace\npip install \"pdrs @ git+https://github.com/abdullah-x-bd/PDRS.git\"\npip install -e \".[dev,all]\"",
+              "python -m build finspace": "python -m build",
+              "finspace/dist/": "dist/",
+          }
+
+          for path in [Path("README.md"), Path("pyproject.toml"), *Path("docs").glob("*.md")]:
+              if not path.exists():
+                  continue
+              text = path.read_text(encoding="utf-8")
+              for old, new in replacements.items():
+                  text = text.replace(old, new)
+              path.write_text(text, encoding="utf-8")
+          PY
+
+      - name: Install development dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "pdrs @ git+https://github.com/abdullah-x-bd/PDRS.git@08c58bc9c6ae6cd067f06027f4ad30370f6dc6c8"
+          python -m pip install -e ".[dev,all]"
+
+      - name: Apply deterministic quality fixes
+        run: |
+          ruff check src tests --fix --unsafe-fixes
+          ruff format src tests
+
+      - name: Validate the standalone package
+        run: |
+          ruff check src tests
+          pytest --cov=finspace --cov-report=term-missing
+          python -m build
+          python -m twine check dist/*
+          finspace --version
+
+      - name: Commit the standalone source
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Import standalone FinSpace package"
+          git push origin main
