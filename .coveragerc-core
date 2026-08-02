@@ -1,0 +1,9 @@
+[run]
+branch = True
+source = finspace
+omit =
+    src/finspace/adapters/*
+
+[report]
+show_missing = True
+fail_under = 75

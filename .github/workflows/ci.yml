@@ -26,17 +26,66 @@ jobs:
           python-version: ${{ matrix.python-version }}
           cache: pip
 
-      - name: Install PDRS and FinSpace
+      - name: Install published PDRS and FinSpace
         run: |
           python -m pip install --upgrade pip
-          python -m pip install "pdrs @ git+https://github.com/abdullah-x-bd/PDRS.git@08c58bc9c6ae6cd067f06027f4ad30370f6dc6c8"
+          python -m pip install --no-cache-dir pdrs==0.2.0
           python -m pip install -e ".[dev,tabular]"
+
+      - name: Verify published PDRS API and CLI
+        shell: bash
+        run: |
+          pdrs --help >/dev/null
+          python - <<'PY'
+          from importlib.metadata import version
+          import pdrs
+          from pdrs import CompiledSchema
+
+          assert version("pdrs") == "0.2.0"
+          assert pdrs.__version__ == "0.2.0"
+
+          schema = {
+              "name": "pypi-smoke",
+              "version": "1",
+              "root": "root",
+              "nodes": {
+                  "root": {
+                      "type": "choice",
+                      "field": "kind",
+                      "branches": [
+                          {"value": "A", "target": "number"},
+                          {"value": "B", "target": "number"},
+                      ],
+                  },
+                  "number": {
+                      "type": "range",
+                      "field": "number",
+                      "start": 1,
+                      "stop": 3,
+                      "target": "end",
+                  },
+                  "end": {"type": "terminal"},
+              },
+          }
+          compiled = CompiledSchema(schema)
+          assert compiled.count == 6
+          values = [compiled.unrank(rank) for rank in range(compiled.count)]
+          assert len({tuple(value) for value in values}) == compiled.count
+          assert [compiled.rank(value) for value in values] == list(range(compiled.count))
+          assert compiled.canonical_hash
+          print("Published PDRS 0.2.0 rank/unrank smoke test passed")
+          PY
 
       - name: Lint
         run: ruff check src tests
 
-      - name: Test with coverage
-        run: pytest --cov=finspace --cov-report=term-missing --cov-fail-under=75
+      - name: Test core with coverage
+        run: >-
+          pytest
+          --cov=finspace
+          --cov-config=.coveragerc-core
+          --cov-report=term-missing
+          --cov-fail-under=75
 
       - name: Build and verify distributions
         if: matrix.python-version == '3.12'
@@ -71,11 +120,16 @@ jobs:
           python-version: "3.12"
           cache: pip
 
-      - name: Install every optional integration
+      - name: Install published PDRS and every optional integration
         run: |
           python -m pip install --upgrade pip
-          python -m pip install "pdrs @ git+https://github.com/abdullah-x-bd/PDRS.git@08c58bc9c6ae6cd067f06027f4ad30370f6dc6c8"
+          python -m pip install --no-cache-dir pdrs==0.2.0
           python -m pip install -e ".[dev,all]"
+
+      - name: Verify published PDRS dependency
+        run: |
+          python -c "from importlib.metadata import version; assert version('pdrs') == '0.2.0'"
+          pdrs --help >/dev/null
 
       - name: Test finance adapters
         run: pytest tests/test_adapters.py tests/test_batch.py tests/test_templates.py
