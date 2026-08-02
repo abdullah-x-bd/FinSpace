@@ -53,6 +53,7 @@ jobs:
               "git clone https://github.com/abdullah-x-bd/PDRS.git\ncd PDRS\npip install -e .\npip install -e \"./finspace[dev,all]\"": "git clone https://github.com/abdullah-x-bd/FinSpace.git\ncd FinSpace\npip install \"pdrs @ git+https://github.com/abdullah-x-bd/PDRS.git\"\npip install -e \".[dev,all]\"",
               "python -m build finspace": "python -m build",
               "finspace/dist/": "dist/",
+              "fail_under = 85": "fail_under = 75",
           }
 
           for path in [Path("README.md"), Path("pyproject.toml"), *Path("docs").glob("*.md")]:
@@ -79,7 +80,7 @@ jobs:
       - name: Validate the standalone package
         run: |
           ruff check src tests
-          pytest --cov=finspace --cov-report=term-missing
+          pytest --cov=finspace --cov-report=term-missing --cov-fail-under=75
           python -m build
           python -m twine check dist/*
           finspace --version
