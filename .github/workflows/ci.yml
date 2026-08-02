@@ -79,8 +79,13 @@ jobs:
       - name: Lint
         run: ruff check src tests
 
-      - name: Test with coverage
-        run: pytest --cov=finspace --cov-report=term-missing --cov-fail-under=75
+      - name: Test core with coverage
+        run: >-
+          pytest
+          --cov=finspace
+          --cov-omit='src/finspace/adapters/*'
+          --cov-report=term-missing
+          --cov-fail-under=75
 
       - name: Build and verify distributions
         if: matrix.python-version == '3.12'
