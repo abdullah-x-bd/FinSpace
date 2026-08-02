@@ -67,7 +67,7 @@ finspace = "finspace.cli:main"
 [project.urls]
 Homepage = "https://github.com/abdullah-x-bd/FinSpace"
 Documentation = "https://github.com/abdullah-x-bd/FinSpace/tree/main/docs"
-Repository = "https://github.com/abdullah-x-bd/PDRS"
+Repository = "https://github.com/abdullah-x-bd/FinSpace"
 Issues = "https://github.com/abdullah-x-bd/FinSpace/issues"
 
 [tool.setuptools]

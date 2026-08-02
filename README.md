@@ -76,7 +76,7 @@ pip install "finspace[iso20022]"
 pip install "finspace[all]"
 ```
 
-From the current monorepo:
+Install from GitHub before the PyPI release:
 
 ```bash
 pip install "pdrs @ git+https://github.com/abdullah-x-bd/PDRS.git"
