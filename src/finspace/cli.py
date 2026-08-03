@@ -9,6 +9,7 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
+from .replay import ReplayLedger, digest, environment_manifest
 from .space import Space
 
 
@@ -18,14 +19,19 @@ def _json(value: Any) -> str:
 
 def _load_record(value: str) -> dict[str, Any]:
     candidate = Path(value)
-    raw = (
-        json.loads(candidate.read_text(encoding="utf-8"))
-        if candidate.exists()
-        else json.loads(value)
-    )
+    raw = json.loads(candidate.read_text(encoding="utf-8")) if candidate.exists() else json.loads(value)
     if not isinstance(raw, dict):
         raise ValueError("record must be a JSON object")
     return raw
+
+
+def _load_mapping(path: str | None, *, default: dict[str, Any] | None = None) -> dict[str, Any]:
+    if path is None:
+        return dict(default or {})
+    value = json.loads(Path(path).read_text(encoding="utf-8"))
+    if not isinstance(value, dict):
+        raise ValueError(f"{path} must contain a JSON object")
+    return value
 
 
 def _space(path: str) -> Space:
@@ -61,9 +67,7 @@ def command_validate(args: argparse.Namespace) -> int:
 def command_sample(args: argparse.Namespace) -> int:
     space = _space(args.schema)
     if args.stratify:
-        sampled = space.sample_stratified(
-            args.stratify, args.count, seed=args.seed, with_ranks=True
-        )
+        sampled = space.sample_stratified(args.stratify, args.count, seed=args.seed, with_ranks=True)
     else:
         sampled = space.sample(args.count, replace=args.replace, seed=args.seed, with_ranks=True)
     for rank, record in sampled:
@@ -106,6 +110,59 @@ def command_export(args: argparse.Namespace) -> int:
                 for row in _rows(space, start + 1, stop):
                     writer.writerow(row)
     print(_json({"output": str(output), "start": start, "stop": stop, "count": stop - start}))
+    return 0
+
+
+def command_replay_object(args: argparse.Namespace) -> int:
+    with ReplayLedger(args.ledger) as ledger:
+        record = ledger.replay_object(_space(args.schema), args.object_id)
+    print(_json({"status": "reconstructed", "object_id": args.object_id, "record": record}))
+    return 0
+
+
+def command_verify_object(args: argparse.Namespace) -> int:
+    with ReplayLedger(args.ledger) as ledger:
+        status = ledger.verify_object(_space(args.schema), args.object_id)
+    print(_json({"status": status, "object_id": args.object_id}))
+    return 0 if status == "reconstructed" else 1
+
+
+def command_verify_environment(args: argparse.Namespace) -> int:
+    manifest = environment_manifest(extra=_load_mapping(args.extra) if args.extra else None)
+    with ReplayLedger(args.ledger) as ledger:
+        execution = ledger.get_execution(args.execution_id)
+    status = "matched" if execution["environment_hash"] == digest(manifest) else "environment-mismatch"
+    print(_json({"status": status, "manifest": manifest, "execution_id": args.execution_id}))
+    return 0 if status == "matched" else 1
+
+
+def command_replay_execution(args: argparse.Namespace) -> int:
+    environment = _load_mapping(args.environment, default=environment_manifest())
+    oracle = _load_mapping(args.oracle)
+    parameters = _load_mapping(args.parameters)
+    observed = None if args.result is None else json.loads(Path(args.result).read_text(encoding="utf-8"))
+    with ReplayLedger(args.ledger) as ledger:
+        status = ledger.verify_execution(
+            args.execution_id,
+            adapter_name=args.adapter_name,
+            adapter_version=args.adapter_version,
+            environment=environment,
+            oracle_config=oracle,
+            execution_parameters=parameters,
+            external_data_snapshot=args.external_data_snapshot,
+            observed_result=observed,
+        )
+    print(_json({"status": status, "execution_id": args.execution_id}))
+    return 0 if status == "reproduced" else 1
+
+
+def command_export_manifest(args: argparse.Namespace) -> int:
+    with ReplayLedger(args.ledger) as ledger:
+        manifest = ledger.export_manifest(args.execution_id)
+    output = Path(args.output)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(_json(manifest) + "\n", encoding="utf-8")
+    print(_json({"status": "exported", "output": str(output), "execution_id": args.execution_id}))
     return 0
 
 
@@ -158,6 +215,42 @@ def build_parser() -> argparse.ArgumentParser:
     export.add_argument("--stop", type=int)
     export.add_argument("--limit", type=int)
     export.set_defaults(function=command_export)
+
+    replay_object = subparsers.add_parser("replay-object", help="reconstruct a recorded object")
+    replay_object.add_argument("ledger")
+    replay_object.add_argument("schema")
+    replay_object.add_argument("object_id")
+    replay_object.set_defaults(function=command_replay_object)
+
+    verify_object = subparsers.add_parser("verify-object", help="verify a recorded object against a schema")
+    verify_object.add_argument("ledger")
+    verify_object.add_argument("schema")
+    verify_object.add_argument("object_id")
+    verify_object.set_defaults(function=command_verify_object)
+
+    replay_execution = subparsers.add_parser("replay-execution", help="verify execution evidence and an optional observed result")
+    replay_execution.add_argument("ledger")
+    replay_execution.add_argument("execution_id")
+    replay_execution.add_argument("--adapter-name", required=True)
+    replay_execution.add_argument("--adapter-version", required=True)
+    replay_execution.add_argument("--environment")
+    replay_execution.add_argument("--oracle", required=True)
+    replay_execution.add_argument("--parameters", required=True)
+    replay_execution.add_argument("--external-data-snapshot")
+    replay_execution.add_argument("--result")
+    replay_execution.set_defaults(function=command_replay_execution)
+
+    verify_environment = subparsers.add_parser("verify-environment", help="compare the current environment with a recorded execution")
+    verify_environment.add_argument("ledger")
+    verify_environment.add_argument("execution_id")
+    verify_environment.add_argument("--extra")
+    verify_environment.set_defaults(function=command_verify_environment)
+
+    export_manifest = subparsers.add_parser("export-manifest", help="export object and execution evidence")
+    export_manifest.add_argument("ledger")
+    export_manifest.add_argument("execution_id")
+    export_manifest.add_argument("output")
+    export_manifest.set_defaults(function=command_export_manifest)
     return parser
 
 

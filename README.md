@@ -2,56 +2,26 @@
 
 **Exact, rank-addressable financial scenario and protocol spaces.**
 
-FinSpace compiles a finite financial schema into one exact integer domain. Every valid record receives one canonical rank, and every rank decodes to one valid record.
+FinSpace compiles a finite financial schema into one exact integer domain. Every valid record receives one canonical rank, and every rank reconstructs one valid record under the matching schema and canonicalization version.
 
 ```text
 financial record  <---- exact bijection ---->  integer in [0, N)
 ```
 
-That one integer can be used as a:
-
-- reproducible scenario identifier
-- cache and database key
-- deterministic worker assignment
-- test-case reproducer
-- checkpoint coordinate
-- source of duplicate-free samples
-- position in complete finite-domain enumeration
-
-FinSpace is powered by [PDRS](https://github.com/abdullah-x-bd/PDRS), whose rank/unrank engine has Python, C, and Rust conformance evidence.
+A rank can serve as a schema-relative object identifier, cache key, checkpoint coordinate, deterministic worker assignment, duplicate-free sampling coordinate, or position in complete finite-domain enumeration. FinSpace is powered by [PDRS](https://github.com/abdullah-x-bd/PDRS).
 
 ## Why it exists
 
-Financial testing and risk workflows frequently construct a Cartesian product and filter it afterward:
+Financial testing and risk workflows often build a Cartesian product and filter invalid combinations afterward. This becomes expensive when valid choices depend on earlier fields, workers repeat costly calculations, campaigns must resume after interruption, and a failed object must be reconstructed precisely.
 
-```python
-for product in products:
-    for currency in currencies:
-        for maturity in maturities:
-            for shock in shocks:
-                scenario = build(...)
-                if valid(scenario):
-                    calculate(scenario)
-```
-
-This becomes expensive and operationally awkward when:
-
-- valid choices depend on earlier fields
-- most combinations are invalid
-- millions of scenarios are divided between workers
-- random workers duplicate expensive calculations
-- a failed case must be reproduced exactly
-- campaigns must resume after interruption
-
-FinSpace compiles only the valid domain and addresses it directly:
+FinSpace compiles only the valid finite domain and addresses it directly:
 
 ```python
 from finspace.templates import european_option_space
 
 space = european_option_space()
-print(space.count)
-
 worker = space.partition(worker_id=3, worker_count=32)
+
 for rank in worker:
     scenario = space.unrank(rank)
     result = price(scenario)
@@ -59,8 +29,6 @@ for rank in worker:
 ```
 
 ## Installation
-
-Once published:
 
 ```bash
 pip install finspace
@@ -76,23 +44,15 @@ pip install "finspace[iso20022]"
 pip install "finspace[all]"
 ```
 
-Install from GitHub before the PyPI release:
-
-```bash
-pip install "pdrs @ git+https://github.com/abdullah-x-bd/PDRS.git"
-pip install "finspace[all] @ git+https://github.com/abdullah-x-bd/FinSpace.git"
-```
-
 For development:
 
 ```bash
 git clone https://github.com/abdullah-x-bd/FinSpace.git
 cd FinSpace
-pip install "pdrs @ git+https://github.com/abdullah-x-bd/PDRS.git"
 pip install -e ".[dev,all]"
 ```
 
-## Thirty-second example
+## Basic example
 
 ```python
 from finspace import Field, Schema, Space
@@ -117,9 +77,6 @@ schema = Schema(
 )
 
 space = Space(schema)
-print(space.count)            # 324
-print(space.schema_hash)      # stable high-level schema identity
-
 record = {
     "option_type": "call",
     "currency": "USD",
@@ -131,205 +88,107 @@ record = {
 
 rank = space.rank(record)
 assert space.unrank(rank) == record
-
-samples = space.sample(100, replace=False, seed=42)
-assert len({space.rank(item) for item in samples}) == 100
 ```
 
-## Conditional fields
-
-A FIX limit order requires a price; a market order does not.
-
-```python
-from finspace import Condition, Field, Schema, Space
-
-orders = Space(
-    Schema(
-        name="orders",
-        fields=(
-            Field.enum("order_type", ["market", "limit", "stop_limit"]),
-            Field.enum("symbol", ["AAPL", "MSFT"]),
-            Field.enum(
-                "price",
-                [90.0, 100.0, 110.0],
-                when=(Condition("order_type", ("limit", "stop_limit")),),
-            ),
-            Field.enum(
-                "stop_price",
-                [85.0, 95.0, 105.0],
-                when=(Condition("order_type", ("stop_limit",)),),
-            ),
-        ),
-    )
-)
-
-market = orders.unrank(0)
-assert "price" not in market
-```
-
-## Sampling modes
-
-### Exact object-uniform samples without replacement
+## Sampling and distributed allocation
 
 ```python
 records = space.sample(10_000, replace=False, seed=7)
-```
-
-### Replacement sampling
-
-```python
-records = space.sample(10_000, replace=True, seed=7)
-```
-
-### Branch-balanced sampling
-
-Object-uniform sampling can underrepresent a small top-level branch. FinSpace therefore exposes explicit stratification when branch coverage is the objective:
-
-```python
-records = space.sample_stratified(
-    "instrument_type",
-    10_000,
-    seed=7,
-)
-```
-
-The objective is explicit rather than hidden:
-
-- `sample()` targets complete-object uniformity
-- `sample_stratified()` targets balance across a named field
-
-## Distributed work
-
-```python
+stratified = space.sample_stratified("option_type", 1_000, seed=7)
 partitions = space.partitions(worker_count=8)
-
-for partition in partitions:
-    print(partition.start, partition.stop, len(partition))
 ```
 
-The intervals are disjoint and cover the domain exactly.
-
-```python
-worker = space.partition(worker_id=2, worker_count=8)
-for batch in worker.batches(10_000):
-    records = space.unrank_many(batch)
-    calculate_batch(records)
-```
+`sample()` targets complete-object uniformity. `sample_stratified()` targets balance across a named field. Deterministic partitions are disjoint and cover the domain exactly, although equal object counts do not guarantee equal execution cost.
 
 ## Checkpointed execution
 
 ```python
 from finspace.runner import Runner
-from finspace.templates import european_option_space
 from finspace.adapters.quantlib import QuantLibEuropeanOptionPricer
 
-space = european_option_space()
 runner = Runner(
     space,
     QuantLibEuropeanOptionPricer(),
     backend="thread",
     max_workers=8,
     checkpoint="option-results.sqlite",
-    run_id="daily-risk-2026-08-02",
+    run_id="daily-risk",
 )
-
-summary = runner.run(
-    partition=space.partition(worker_id=0, worker_count=4),
-    limit=50_000,
-)
-print(summary.to_dict())
+summary = runner.run(partition=space.partition(0, 4), limit=50_000)
 ```
 
-Re-running the same command skips completed ranks. A checkpoint refuses to resume against a different schema hash.
+A checkpoint binds completed ranks to the schema hash and refuses to resume against a different schema.
 
-## Tabular output
+## Object reconstruction and execution reproduction
 
-```python
-from finspace import to_numpy, to_pandas, to_arrow
+FinSpace separates two evidentiary levels.
 
-records = space.sample(1000, replace=False, seed=42)
-arrays = to_numpy(records)
-frame = to_pandas(records)
-table = to_arrow(records)
+An **object identity** binds:
+
+```text
+canonicalization version || schema hash || rank || PDRS version/commit
 ```
+
+It reconstructs one canonical structured object under the matching schema.
+
+An **execution identity** additionally binds:
+
+```text
+FinSpace version/commit
+adapter name and version
+environment manifest
+oracle configuration
+execution parameters
+external-data snapshot
+result digest
+```
+
+A schema hash and rank alone do not reproduce an execution result. FinSpace reports explicit states such as `adapter-mismatch`, `environment-mismatch`, `oracle-mismatch`, `external-data-unavailable`, and `result-divergence` instead of making a broad exact-replay claim.
+
+The versioned SQLite replay ledger and CLI support:
+
+```bash
+finspace replay-object LEDGER SCHEMA OBJECT_ID
+finspace verify-object LEDGER SCHEMA OBJECT_ID
+finspace replay-execution LEDGER EXECUTION_ID \
+  --adapter-name quantlib --adapter-version 1.43 \
+  --oracle oracle.json --parameters parameters.json
+finspace verify-environment LEDGER EXECUTION_ID
+finspace export-manifest LEDGER EXECUTION_ID manifest.json
+```
+
+See [Object reconstruction and execution reproduction](docs/replay.md).
 
 ## Finance integrations
 
-### QuantLib
+FinSpace includes bounded integrations for:
 
-```python
-from finspace.templates import european_option_space
-from finspace.adapters import QuantLibEuropeanOptionPricer
+- QuantLib scenario and pricing workflows
+- SimpleFIX financial-message generation
+- ISO 20022 XML generation and validation
+- NumPy, pandas, and Arrow output
 
-space = european_option_space()
-pricer = QuantLibEuropeanOptionPricer()
-
-rank, scenario = space.sample(1, seed=10, with_ranks=True)[0]
-result = pricer(scenario)
-print(rank, result["npv"])
-```
-
-### SimpleFIX
-
-```python
-from finspace.templates import fix_order_space
-from finspace.adapters import SimpleFixNewOrderSingleEncoder
-
-space = fix_order_space()
-record = space.sample(1, seed=10)[0]
-record["client_order_id"] = "ORDER-0001"
-encoded = SimpleFixNewOrderSingleEncoder()(record)
-```
-
-### ISO 20022
-
-```python
-from finspace.templates import iso20022_payment_space
-from finspace.adapters import ISO20022PaymentBuilder
-
-space = iso20022_payment_space()
-record = space.sample(1, seed=10)[0]
-xml = ISO20022PaymentBuilder()(record)
-```
+These adapters demonstrate orchestration. FinSpace does not make pricing formulas, numerical kernels, matrix operations, or Monte Carlo paths intrinsically faster.
 
 ## CLI
 
 ```bash
 finspace inspect examples/european_options.yaml
 finspace sample examples/european_options.yaml -n 5 --seed 42
-finspace sample examples/fix_orders.yaml -n 20 --stratify order_type
 finspace rank examples/european_options.yaml scenario.json
 finspace unrank examples/european_options.yaml 1234
 finspace partition examples/european_options.yaml --workers 16 --worker 3
 finspace export examples/european_options.yaml scenarios.jsonl --limit 1000
 ```
 
-## What FinSpace accelerates
+## Limitations
 
-FinSpace can reduce work spent on:
-
-- invalid Cartesian combinations
-- rejection sampling
-- duplicate scenario generation
-- duplicate cross-worker calculations
-- full-list materialization
-- task coordination databases
-- serialization-heavy cache keys
-- manual replay bookkeeping
-
-It does **not** make a pricing formula, matrix multiplication, or Monte Carlo path intrinsically faster. It orchestrates the finite scenario domain around those calculations.
-
-## Evidence behind the package
-
-The PDRS repository includes real-program evaluations against:
-
-- SimpleFIX
-- QuantLib
-- ISO 20022 XSD validation
-
-At 500,000 generated cases, exact no-replacement ranks avoided 35,604 repeated QuantLib scenarios and 28,031 repeated ISO 20022 scenarios. Eight deterministic partitions had zero overlap, while independent random workers overlapped by 20,078 QuantLib scenarios and 15,828 ISO scenarios in the tested configuration.
-
-The same evaluation found that PDRS did not improve SimpleFIX code coverage at the matched budget. FinSpace therefore exposes both object-uniform and branch-stratified sampling rather than pretending one distribution solves every testing objective.
+- Object-uniform sampling is not universally optimal for defect discovery.
+- Contiguous rank intervals do not guarantee balanced execution cost.
+- A rank is not an integrity-protected identifier.
+- Arbitrary schema edits do not preserve ranks.
+- Object reconstruction does not guarantee execution-result reproduction.
+- FinSpace does not replace QuantLib, property-based testing, covering arrays, or stochastic simulation.
 
 ## Documentation
 
@@ -337,6 +196,7 @@ The same evaluation found that PDRS did not improve SimpleFIX code coverage at t
 - [Schema language](docs/schema-language.md)
 - [Sampling and partitioning](docs/sampling-and-partitioning.md)
 - [Checkpointed runner](docs/runner.md)
+- [Object reconstruction and execution reproduction](docs/replay.md)
 - [Finance adapters](docs/adapters.md)
 - [Architecture](docs/architecture.md)
 - [Limitations and safety](docs/limitations.md)
@@ -344,4 +204,4 @@ The same evaluation found that PDRS did not improve SimpleFIX code coverage at t
 
 ## Status
 
-FinSpace 0.1 is an alpha release. Its public API is documented and tested, but users should pin the version and schema hash for production evaluation campaigns.
+FinSpace 0.1 is an alpha release. Pin package versions, schema hashes, canonicalization versions, adapters, environments, oracle configurations, and external-data snapshots for reproducible evaluation campaigns.
