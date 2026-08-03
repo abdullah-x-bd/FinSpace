@@ -2,17 +2,18 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
-from datetime import datetime, timezone
 import hashlib
 import importlib.metadata
 import json
 import os
-from pathlib import Path
 import platform
 import sqlite3
 import sys
-from typing import Any, Mapping, Protocol
+from collections.abc import Mapping
+from dataclasses import asdict, dataclass
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import Any, Protocol
 
 CANONICALIZATION_VERSION = "2"
 LEDGER_SCHEMA_VERSION = 2
@@ -411,4 +412,4 @@ def build_execution_identity(
 
 
 def _utc_now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
