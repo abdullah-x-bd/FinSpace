@@ -55,6 +55,7 @@ all = [
 dev = [
   "build>=1.2,<2",
   "coverage>=7.6,<8",
+  "hypothesis>=6.112,<7",
   "mypy>=1.13,<2",
   "pytest>=8.3,<10",
   "pytest-cov>=6,<8",
@@ -90,7 +91,7 @@ source = ["finspace"]
 
 [tool.coverage.report]
 show_missing = true
-fail_under = 75
+fail_under = 90
 
 [tool.ruff]
 target-version = "py311"
