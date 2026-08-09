@@ -98,12 +98,12 @@ def compare_spaces(old: Space, new: Space, *, max_objects: int = 1_000_000) -> M
     mapped_new: set[int] = set()
     for old_rank in range(old.count):
         key = canonical_json(old.unrank(old_rank))
-        new_rank = new_by_record.get(key)
-        if new_rank is None:
+        matched_rank = new_by_record.get(key)
+        if matched_rank is None:
             removed.append(old_rank)
         else:
-            mapping.append((old_rank, new_rank))
-            mapped_new.add(new_rank)
+            mapping.append((old_rank, matched_rank))
+            mapped_new.add(matched_rank)
 
     added = tuple(rank for rank in range(new.count) if rank not in mapped_new)
     return MigrationMap(
