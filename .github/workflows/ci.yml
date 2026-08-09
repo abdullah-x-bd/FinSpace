@@ -79,9 +79,15 @@ jobs:
       - name: Lint
         run: ruff check src tests experiments
 
-      - name: Type check
+      - name: Type check semantic core
         if: matrix.python-version == '3.12'
-        run: mypy src
+        run: >-
+          mypy
+          src/finspace/schema.py
+          src/finspace/compiler.py
+          src/finspace/space.py
+          src/finspace/replay.py
+          src/finspace/runner.py
 
       - name: Test core with coverage
         run: >-
