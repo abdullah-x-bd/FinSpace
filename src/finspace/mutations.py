@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from .schema import JSONValue, Field, _canonical
+from .schema import Field, JSONValue, _canonical
 from .space import Space
 
 
@@ -77,6 +77,6 @@ def invalid_mutations(space: Space, record: dict[str, JSONValue]) -> tuple[Recor
 
     deduplicated: dict[bytes, RecordMutation] = {}
     for mutation in output:
-        key = repr(sorted(mutation.record.items())).encode("utf-8")
+        key = repr(sorted(mutation.record.items())).encode()
         deduplicated.setdefault(key, mutation)
     return tuple(deduplicated.values())
