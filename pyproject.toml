@@ -105,8 +105,7 @@ ignore = ["E501"]
 python_version = "3.12"
 strict = true
 warn_unused_ignores = true
-packages = ["finspace"]
 
 [[tool.mypy.overrides]]
-module = ["QuantLib", "simplefix", "lxml", "lxml.*"]
+module = ["pdrs", "yaml"]
 ignore_missing_imports = true
