@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 from .space import Space
 
@@ -93,4 +93,4 @@ def parse_rank_handle(value: str) -> RankHandle:
     integrity = parts[4]
     if not integrity:
         raise ValueError("missing FinSpace handle integrity value")
-    return RankHandle(version, schema_hash, rank, mode, integrity)  # type: ignore[arg-type]
+    return RankHandle(version, schema_hash, rank, cast(HandleMode, mode), integrity)
