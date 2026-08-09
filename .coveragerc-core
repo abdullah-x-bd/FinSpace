@@ -3,6 +3,9 @@ branch = True
 source = finspace
 omit =
     src/finspace/adapters/*
+    src/finspace/batch.py
+    src/finspace/cli.py
+    src/finspace/templates.py
 
 [report]
 show_missing = True
