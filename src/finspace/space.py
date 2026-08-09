@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import random
-from collections.abc import Iterable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
@@ -87,6 +87,7 @@ class Space:
             "compiled_states": self.compilation.states,
             "fixed": dict(self.fixed),
             "fields": [field.to_dict() for field in self.schema.fields],
+            "constraints": [constraint.to_dict() for constraint in self.schema.constraints],
         }
 
     def _tokens_from_record(self, record: Mapping[str, JSONValue]) -> list[str]:
@@ -123,6 +124,11 @@ class Space:
                 )
             tokens.append(str(index))
             context[field_spec.name] = value
+        for constraint in self.schema.constraints:
+            if not constraint.satisfied(context):
+                raise RecordValidationError(
+                    f"record violates table constraint over {', '.join(constraint.fields)}"
+                )
         return tokens
 
     def _record_from_tokens(self, tokens: Sequence[str | int]) -> dict[str, JSONValue]:
@@ -204,6 +210,21 @@ class Space:
             return [(rank, self.unrank(rank)) for rank in ranks]
         return [self.unrank(rank) for rank in ranks]
 
+    def weighted_sampler(self, weights: Sequence[int]) -> Any:
+        from .weighted import WeightedSampler
+
+        return WeightedSampler(self, weights)
+
+    def weighted_from_function(
+        self,
+        function: Callable[[Mapping[str, JSONValue]], int],
+        *,
+        max_objects: int = 1_000_000,
+    ) -> Any:
+        from .weighted import WeightedSampler
+
+        return WeightedSampler.from_function(self, function, max_objects=max_objects)
+
     def condition(self, **fixed: JSONValue) -> Space:
         combined = dict(self.fixed)
         combined.update(fixed)
@@ -257,6 +278,37 @@ class Space:
 
     def partitions(self, worker_count: int) -> tuple[Partition, ...]:
         return tuple(self.partition(worker, worker_count) for worker in range(worker_count))
+
+    def allocation(
+        self,
+        worker_id: int,
+        worker_count: int,
+        *,
+        strategy: str = "contiguous",
+        seed: int | str | bytes | None = None,
+    ) -> Any:
+        from .allocation import RankAllocation
+
+        return RankAllocation(
+            self.schema_hash,
+            self.count,
+            worker_id,
+            worker_count,
+            strategy,
+            seed,
+        )
+
+    def allocations(
+        self,
+        worker_count: int,
+        *,
+        strategy: str = "contiguous",
+        seed: int | str | bytes | None = None,
+    ) -> tuple[Any, ...]:
+        return tuple(
+            self.allocation(worker, worker_count, strategy=strategy, seed=seed)
+            for worker in range(worker_count)
+        )
 
     def unrank_many(self, ranks: Iterable[int]) -> list[dict[str, JSONValue]]:
         return [self.unrank(rank) for rank in ranks]
