@@ -7,7 +7,7 @@ from dataclasses import asdict, dataclass
 from typing import Any
 
 from .allocation import AllocationStrategy, RankAllocation
-from .runner import Backend, RunSummary, Runner
+from .runner import Backend, Runner, RunSummary
 from .space import Space
 
 
