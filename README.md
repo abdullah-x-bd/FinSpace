@@ -10,6 +10,39 @@ financial record  <---- exact bijection ---->  integer in [0, N)
 
 A rank can serve as a schema-relative object identifier, cache key, checkpoint coordinate, deterministic worker assignment, duplicate-free sampling coordinate, or position in complete finite-domain enumeration. FinSpace is powered by [PDRS](https://github.com/abdullah-x-bd/PDRS).
 
+## Research-software scope
+
+FinSpace is not presented as a universal replacement for financial simulation, property-based testing, covering arrays, or numerical libraries. Its narrower purpose is to make **bounded dependent financial domains exactly addressable and reproducibly executable**.
+
+The repository maintains an explicit [claims and non-claims contract](docs/claims.md), a [formal model](docs/theory.md), and a direct explanation of [what FinSpace contributes beyond PDRS](docs/pdrs-vs-finspace.md).
+
+The executable evidence suite tests:
+
+- exact agreement with independent valid-object enumeration;
+- compiler scaling against logical and Cartesian domain size;
+- direct random access by rank;
+- deterministic partition coverage and non-overlap;
+- checkpoint interruption and resume;
+- object-versus-execution replay semantics;
+- QuantLib scenario execution;
+- FIX New Order Single generation;
+- bounded pain.001 and pacs.008 XML generation;
+- deliberately invalid finance and replay controls.
+
+Reproduce the complete evidence bundle with:
+
+```bash
+python -m experiments.reproduce --output evidence/generated
+```
+
+or:
+
+```bash
+make evidence
+```
+
+See [benchmark and evidence methodology](docs/benchmark-methodology.md).
+
 ## Why it exists
 
 Financial testing and risk workflows often build a Cartesian product and filter invalid combinations afterward. This becomes expensive when valid choices depend on earlier fields, workers repeat costly calculations, campaigns must resume after interruption, and a failed object must be reconstructed precisely.
@@ -163,12 +196,12 @@ See [Object reconstruction and execution reproduction](docs/replay.md).
 
 FinSpace includes bounded integrations for:
 
-- QuantLib scenario and pricing workflows
-- SimpleFIX financial-message generation
-- ISO 20022 XML generation and validation
-- NumPy, pandas, and Arrow output
+- QuantLib scenario and pricing workflows;
+- SimpleFIX financial-message generation;
+- bounded ISO 20022 XML generation for pain.001 and pacs.008 workflows;
+- NumPy, pandas, and Arrow output.
 
-These adapters demonstrate orchestration. FinSpace does not make pricing formulas, numerical kernels, matrix operations, or Monte Carlo paths intrinsically faster.
+These adapters demonstrate orchestration. FinSpace does not make pricing formulas, numerical kernels, matrix operations, or Monte Carlo paths intrinsically faster. The included FIX and ISO 20022 profiles are bounded test profiles, not universal production conformance profiles.
 
 ## CLI
 
@@ -183,16 +216,21 @@ finspace export examples/european_options.yaml scenarios.jsonl --limit 1000
 
 ## Limitations
 
-- Object-uniform sampling is not universally optimal for defect discovery.
+- Object-uniform sampling is not universally optimal for defect discovery or market realism.
 - Contiguous rank intervals do not guarantee balanced execution cost.
 - A rank is not an integrity-protected identifier.
 - Arbitrary schema edits do not preserve ranks.
 - Object reconstruction does not guarantee execution-result reproduction.
 - FinSpace does not replace QuantLib, property-based testing, covering arrays, or stochastic simulation.
+- Timing evidence is environment-specific and is not a universal performance guarantee.
 
 ## Documentation
 
 - [Quick start](docs/quickstart.md)
+- [Claims and non-claims](docs/claims.md)
+- [Formal model](docs/theory.md)
+- [PDRS and FinSpace](docs/pdrs-vs-finspace.md)
+- [Benchmark and evidence methodology](docs/benchmark-methodology.md)
 - [Schema language](docs/schema-language.md)
 - [Sampling and partitioning](docs/sampling-and-partitioning.md)
 - [Checkpointed runner](docs/runner.md)
@@ -200,6 +238,7 @@ finspace export examples/european_options.yaml scenarios.jsonl --limit 1000
 - [Finance adapters](docs/adapters.md)
 - [Architecture](docs/architecture.md)
 - [Limitations and safety](docs/limitations.md)
+- [Evidence artifacts](evidence/README.md)
 - [Release and deployment](docs/releasing.md)
 
 ## Status

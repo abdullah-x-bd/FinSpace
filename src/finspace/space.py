@@ -6,7 +6,7 @@ import random
 from collections.abc import Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from pdrs import CompiledSchema
 
@@ -63,7 +63,7 @@ class Space:
 
     @property
     def count(self) -> int:
-        return self._compiled.count
+        return int(self._compiled.count)
 
     @property
     def schema_hash(self) -> str:
@@ -71,7 +71,7 @@ class Space:
 
     @property
     def engine_hash(self) -> str:
-        return self._compiled.canonical_hash
+        return str(self._compiled.canonical_hash)
 
     @property
     def fields(self) -> tuple[str, ...]:
@@ -149,7 +149,7 @@ class Space:
 
     def rank(self, record: Mapping[str, JSONValue]) -> int:
         try:
-            return self._compiled.rank(self._tokens_from_record(record))
+            return int(self._compiled.rank(self._tokens_from_record(record)))
         except RecordValidationError:
             raise
         except Exception as error:
@@ -210,7 +210,12 @@ class Space:
         return Space(self.schema, fixed=combined)
 
     def sample_stratified(
-        self, field: str, n: int, *, seed: int | str | bytes | None = None, with_ranks: bool = False
+        self,
+        field: str,
+        n: int,
+        *,
+        seed: int | str | bytes | None = None,
+        with_ranks: bool = False,
     ) -> list[dict[str, JSONValue]] | list[tuple[int, dict[str, JSONValue]]]:
         values = list(self.schema.possible_values(field))
         rng = random.Random(seed)
@@ -225,7 +230,16 @@ class Space:
                 raise ValueError(
                     f"stratum {field}={value!r} has only {subspace.count} objects, needs {allocation}"
                 )
-            for record in subspace.sample(allocation, replace=False, seed=rng.randrange(2**63)):
+            records = cast(
+                list[dict[str, JSONValue]],
+                subspace.sample(
+                    allocation,
+                    replace=False,
+                    seed=rng.randrange(2**63),
+                    with_ranks=False,
+                ),
+            )
+            for record in records:
                 output.append((self.rank(record), record))
         rng.shuffle(output)
         if with_ranks:
