@@ -175,7 +175,9 @@ def benchmark_scalability(*, quick: bool) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for size in sizes:
         item = profile(size)
-        space, seconds, peak_bytes = measure(lambda: Space(schema_for_profile(item)))
+        space, seconds, peak_bytes = measure(
+            lambda item=item: Space(schema_for_profile(item))
+        )
         rows.append(
             {
                 "size": size,
@@ -197,9 +199,12 @@ def benchmark_baselines(*, quick: bool) -> list[dict[str, Any]]:
         item = profile(size)
         space = Space(schema_for_profile(item))
         implementations: tuple[tuple[str, Callable[[], int]], ...] = (
-            ("cartesian_filter", lambda: cartesian_count(item)),
-            ("recursive_generator", lambda: recursive_count(item)),
-            ("finspace_enumerate", lambda: sum(1 for _ in space.enumerate())),
+            ("cartesian_filter", lambda item=item: cartesian_count(item)),
+            ("recursive_generator", lambda item=item: recursive_count(item)),
+            (
+                "finspace_enumerate",
+                lambda space=space: sum(1 for _ in space.enumerate()),
+            ),
         )
         for name, function in implementations:
             count, seconds, peak_bytes = measure(function)
@@ -259,8 +264,7 @@ def partition_evidence(*, quick: bool) -> list[dict[str, Any]]:
         partitions = space.partitions(worker_count)
         sizes = [len(partition) for partition in partitions]
         adjacent = all(
-            left.stop == right.start
-            for left, right in zip(partitions, partitions[1:], strict=False)
+            left.stop == right.start for left, right in itertools.pairwise(partitions)
         )
         complete = (
             partitions[0].start == 0
