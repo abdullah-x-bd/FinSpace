@@ -1,4 +1,4 @@
-name: FinSpace hardening autofix disabled
+name: FinSpace manual evidence reproduction
 
 on:
   workflow_dispatch:
@@ -7,7 +7,22 @@ permissions:
   contents: read
 
 jobs:
-  disabled:
+  evidence:
     runs-on: ubuntu-latest
     steps:
-      - run: echo 'Temporary hardening autofix is disabled; permanent CI owns validation.'
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install complete evidence environment
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install --no-cache-dir pdrs==0.2.0
+          python -m pip install -e ".[dev,all]"
+      - name: Reproduce full FinSpace evidence
+        run: python -m experiments.reproduce --output evidence/generated
+      - uses: actions/upload-artifact@v4
+        with:
+          name: finspace-manual-evidence
+          path: evidence/generated/
