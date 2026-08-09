@@ -40,6 +40,7 @@ class TaskResult:
     result: Any = None
     error: str | None = None
     seconds: float = 0.0
+    attempts: int = 1
 
 
 @dataclass(frozen=True)
@@ -50,6 +51,7 @@ class RunSummary:
     completed: int
     failed: int
     skipped: int
+    retries: int
     seconds: float
     checkpoint: str | None
 
@@ -65,6 +67,7 @@ class RunSummary:
             "completed": self.completed,
             "failed": self.failed,
             "skipped": self.skipped,
+            "retries": self.retries,
             "seconds": self.seconds,
             "checkpoint": self.checkpoint,
             "successful": self.successful,
@@ -75,18 +78,31 @@ def _execute_function(
     function: Callable[[Mapping[str, Any]], Any],
     rank: int,
     record: Mapping[str, Any],
+    max_retries: int = 0,
 ) -> TaskResult:
     started = time.perf_counter()
-    try:
-        return TaskResult(
-            rank,
-            "completed",
-            result=function(record),
-            seconds=time.perf_counter() - started,
-        )
-    except Exception as error:
-        detail = "".join(traceback.format_exception(type(error), error, error.__traceback__))
-        return TaskResult(rank, "failed", error=detail, seconds=time.perf_counter() - started)
+    attempts = 0
+    while True:
+        attempts += 1
+        try:
+            return TaskResult(
+                rank,
+                "completed",
+                result=function(record),
+                seconds=time.perf_counter() - started,
+                attempts=attempts,
+            )
+        except Exception as error:
+            if attempts <= max_retries:
+                continue
+            detail = "".join(traceback.format_exception(type(error), error, error.__traceback__))
+            return TaskResult(
+                rank,
+                "failed",
+                error=detail,
+                seconds=time.perf_counter() - started,
+                attempts=attempts,
+            )
 
 
 class CheckpointStore:
@@ -113,6 +129,7 @@ class CheckpointStore:
                 result_json TEXT,
                 error TEXT,
                 seconds REAL NOT NULL DEFAULT 0,
+                attempts INTEGER NOT NULL DEFAULT 1,
                 updated_at REAL NOT NULL,
                 PRIMARY KEY (run_id, rank),
                 FOREIGN KEY (run_id) REFERENCES runs(run_id)
@@ -120,6 +137,13 @@ class CheckpointStore:
             CREATE INDEX IF NOT EXISTS tasks_status ON tasks(run_id, status);
             """
         )
+        columns = {
+            row[1] for row in self.connection.execute("PRAGMA table_info(tasks)").fetchall()
+        }
+        if "attempts" not in columns:
+            self.connection.execute(
+                "ALTER TABLE tasks ADD COLUMN attempts INTEGER NOT NULL DEFAULT 1"
+            )
         self.connection.commit()
 
     def close(self) -> None:
@@ -153,19 +177,32 @@ class CheckpointStore:
         )
         return {int(row[0]) for row in rows}
 
+    def failed_ranks(self, run_id: str) -> set[int]:
+        rows = self.connection.execute(
+            "SELECT rank FROM tasks WHERE run_id = ? AND status = 'failed'", (run_id,)
+        )
+        return {int(row[0]) for row in rows}
+
+    def status_counts(self, run_id: str) -> dict[str, int]:
+        rows = self.connection.execute(
+            "SELECT status, COUNT(*) FROM tasks WHERE run_id = ? GROUP BY status", (run_id,)
+        )
+        return {str(status): int(count) for status, count in rows}
+
     def record(self, run_id: str, task: TaskResult) -> None:
         result_json = None
         if task.status == "completed":
             result_json = json.dumps(task.result, default=_default_json, separators=(",", ":"))
         self.connection.execute(
             """
-            INSERT INTO tasks(run_id, rank, status, result_json, error, seconds, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO tasks(run_id, rank, status, result_json, error, seconds, attempts, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(run_id, rank) DO UPDATE SET
                 status = excluded.status,
                 result_json = excluded.result_json,
                 error = excluded.error,
                 seconds = excluded.seconds,
+                attempts = excluded.attempts,
                 updated_at = excluded.updated_at
             """,
             (
@@ -175,19 +212,23 @@ class CheckpointStore:
                 result_json,
                 task.error,
                 task.seconds,
+                task.attempts,
                 time.time(),
             ),
         )
         self.connection.commit()
 
     def results(self, run_id: str, status: str | None = None) -> Iterator[TaskResult]:
-        query = "SELECT rank, status, result_json, error, seconds FROM tasks WHERE run_id = ?"
+        query = (
+            "SELECT rank, status, result_json, error, seconds, attempts "
+            "FROM tasks WHERE run_id = ?"
+        )
         parameters: list[Any] = [run_id]
         if status is not None:
             query += " AND status = ?"
             parameters.append(status)
         query += " ORDER BY CAST(rank AS INTEGER)"
-        for rank, task_status, result_json, error, seconds in self.connection.execute(
+        for rank, task_status, result_json, error, seconds, attempts in self.connection.execute(
             query, parameters
         ):
             yield TaskResult(
@@ -196,6 +237,7 @@ class CheckpointStore:
                 result=json.loads(result_json) if result_json else None,
                 error=error,
                 seconds=seconds,
+                attempts=int(attempts),
             )
 
 
@@ -203,7 +245,8 @@ class Runner:
     """Execute a callable over exact ranks with resumable checkpoints.
 
     Rank iterables are consumed lazily. Even a billion-object partition is not
-    materialized as a Python list.
+    materialized as a Python list. ``max_retries`` retries a failing callable on
+    the same canonical object before the rank is recorded as failed.
     """
 
     def __init__(
@@ -217,9 +260,12 @@ class Runner:
         run_id: str = "default",
         fail_fast: bool = False,
         max_in_flight: int | None = None,
+        max_retries: int = 0,
     ) -> None:
         if backend not in {"sequential", "thread", "process"}:
             raise ValueError(f"unsupported backend {backend!r}")
+        if max_retries < 0:
+            raise ValueError("max_retries cannot be negative")
         self.space = space
         self.function = function
         self.backend = backend
@@ -228,6 +274,7 @@ class Runner:
         self.run_id = run_id
         self.fail_fast = fail_fast
         self.max_in_flight = max_in_flight
+        self.max_retries = max_retries
 
     def _parallel(
         self,
@@ -246,7 +293,13 @@ class Runner:
                 except StopIteration:
                     return False
                 record = self.space.unrank(rank)
-                future = executor.submit(_execute_function, self.function, rank, record)
+                future = executor.submit(
+                    _execute_function,
+                    self.function,
+                    rank,
+                    record,
+                    self.max_retries,
+                )
                 futures[future] = rank
                 return True
 
@@ -303,9 +356,15 @@ class Runner:
         started = time.perf_counter()
         completed = 0
         failed = 0
+        retries = 0
         if self.backend == "sequential":
             results: Iterable[TaskResult] = (
-                _execute_function(self.function, rank, self.space.unrank(rank))
+                _execute_function(
+                    self.function,
+                    rank,
+                    self.space.unrank(rank),
+                    self.max_retries,
+                )
                 for rank in pending()
             )
         elif self.backend == "thread":
@@ -315,6 +374,7 @@ class Runner:
 
         try:
             for task in results:
+                retries += max(0, task.attempts - 1)
                 if store:
                     store.record(self.run_id, task)
                 if task.status == "completed":
@@ -334,6 +394,7 @@ class Runner:
             completed=completed,
             failed=failed,
             skipped=skipped,
+            retries=retries,
             seconds=time.perf_counter() - started,
             checkpoint=str(self.checkpoint) if self.checkpoint else None,
         )
