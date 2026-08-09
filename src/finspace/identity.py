@@ -14,7 +14,7 @@ HandleMode = Literal["checksum", "mac"]
 
 
 def _payload(version: str, schema_hash: str, rank: int) -> bytes:
-    return f"{version}:{schema_hash}:{rank}".encode("utf-8")
+    return f"{version}:{schema_hash}:{rank}".encode()
 
 
 def _checksum(payload: bytes) -> str:
