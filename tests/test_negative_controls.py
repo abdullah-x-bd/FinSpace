@@ -56,49 +56,51 @@ def test_replay_verifier_distinguishes_each_mismatch_class() -> None:
     parameters = {"workers": 1}
     result = {"value": 1.0}
 
-    with tempfile.TemporaryDirectory() as directory:
-        with ReplayLedger(Path(directory) / "ledger.sqlite") as ledger:
-            object_hash = ledger.record_object(build_object_identity(space, 0), space.unrank(0))
-            identity = build_execution_identity(
-                object_hash,
-                adapter_name="reference",
-                adapter_version="1",
-                environment=environment,
-                oracle_config=oracle,
-                execution_parameters=parameters,
-                external_data_snapshot="sha256:data-v1",
-            )
-            execution_hash = ledger.record_execution(
-                identity,
-                environment=environment,
-                oracle_config=oracle,
-                execution_parameters=parameters,
-                result=result,
-            )
+    with (
+        tempfile.TemporaryDirectory() as directory,
+        ReplayLedger(Path(directory) / "ledger.sqlite") as ledger,
+    ):
+        object_hash = ledger.record_object(build_object_identity(space, 0), space.unrank(0))
+        identity = build_execution_identity(
+            object_hash,
+            adapter_name="reference",
+            adapter_version="1",
+            environment=environment,
+            oracle_config=oracle,
+            execution_parameters=parameters,
+            external_data_snapshot="sha256:data-v1",
+        )
+        execution_hash = ledger.record_execution(
+            identity,
+            environment=environment,
+            oracle_config=oracle,
+            execution_parameters=parameters,
+            result=result,
+        )
 
-            common = {
-                "identity_hash": execution_hash,
-                "adapter_name": "reference",
-                "adapter_version": "1",
-                "environment": environment,
-                "oracle_config": oracle,
-                "execution_parameters": parameters,
-                "external_data_snapshot": "sha256:data-v1",
-            }
-            assert ledger.verify_execution(**common, observed_result=result) == "reproduced"
-            assert ledger.verify_execution(**{**common, "adapter_version": "2"}) == "adapter-mismatch"
-            assert ledger.verify_execution(
-                **{**common, "environment": {**environment, "calendar": "TARGET"}}
-            ) == "environment-mismatch"
-            assert ledger.verify_execution(
-                **{**common, "oracle_config": {"name": "reference", "tolerance": 1e-6}}
-            ) == "oracle-mismatch"
-            assert ledger.verify_execution(
-                **{**common, "execution_parameters": {"workers": 2}}
-            ) == "execution-parameters-mismatch"
-            assert ledger.verify_execution(
-                **{**common, "external_data_snapshot": None}
-            ) == "external-data-unavailable"
-            assert ledger.verify_execution(
-                **common, observed_result={"value": 2.0}
-            ) == "result-divergence"
+        common = {
+            "identity_hash": execution_hash,
+            "adapter_name": "reference",
+            "adapter_version": "1",
+            "environment": environment,
+            "oracle_config": oracle,
+            "execution_parameters": parameters,
+            "external_data_snapshot": "sha256:data-v1",
+        }
+        assert ledger.verify_execution(**common, observed_result=result) == "reproduced"
+        assert ledger.verify_execution(**{**common, "adapter_version": "2"}) == "adapter-mismatch"
+        assert ledger.verify_execution(
+            **{**common, "environment": {**environment, "calendar": "TARGET"}}
+        ) == "environment-mismatch"
+        assert ledger.verify_execution(
+            **{**common, "oracle_config": {"name": "reference", "tolerance": 1e-6}}
+        ) == "oracle-mismatch"
+        assert ledger.verify_execution(
+            **{**common, "execution_parameters": {"workers": 2}}
+        ) == "execution-parameters-mismatch"
+        assert ledger.verify_execution(
+            **{**common, "external_data_snapshot": None}
+        ) == "external-data-unavailable"
+        assert ledger.verify_execution(
+            **common, observed_result={"value": 2.0}
+        ) == "result-divergence"
