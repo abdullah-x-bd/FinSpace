@@ -6,13 +6,17 @@ import random
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from pdrs import CompiledSchema
 
+from .allocation import AllocationStrategy, RankAllocation
 from .compiler import Compilation, SchemaCompiler
 from .errors import RankOutOfRangeError, RecordValidationError
 from .schema import JSONValue, Schema, _canonical
+
+if TYPE_CHECKING:
+    from .weighted import WeightedSampler
 
 
 @dataclass(frozen=True)
@@ -210,7 +214,7 @@ class Space:
             return [(rank, self.unrank(rank)) for rank in ranks]
         return [self.unrank(rank) for rank in ranks]
 
-    def weighted_sampler(self, weights: Sequence[int]) -> Any:
+    def weighted_sampler(self, weights: Sequence[int]) -> WeightedSampler:
         from .weighted import WeightedSampler
 
         return WeightedSampler(self, weights)
@@ -220,7 +224,7 @@ class Space:
         function: Callable[[Mapping[str, JSONValue]], int],
         *,
         max_objects: int = 1_000_000,
-    ) -> Any:
+    ) -> WeightedSampler:
         from .weighted import WeightedSampler
 
         return WeightedSampler.from_function(self, function, max_objects=max_objects)
@@ -284,11 +288,9 @@ class Space:
         worker_id: int,
         worker_count: int,
         *,
-        strategy: str = "contiguous",
+        strategy: AllocationStrategy = "contiguous",
         seed: int | str | bytes | None = None,
-    ) -> Any:
-        from .allocation import RankAllocation
-
+    ) -> RankAllocation:
         return RankAllocation(
             self.schema_hash,
             self.count,
@@ -302,9 +304,9 @@ class Space:
         self,
         worker_count: int,
         *,
-        strategy: str = "contiguous",
+        strategy: AllocationStrategy = "contiguous",
         seed: int | str | bytes | None = None,
-    ) -> tuple[Any, ...]:
+    ) -> tuple[RankAllocation, ...]:
         return tuple(
             self.allocation(worker, worker_count, strategy=strategy, seed=seed)
             for worker in range(worker_count)
