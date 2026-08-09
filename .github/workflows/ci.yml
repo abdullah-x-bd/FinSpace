@@ -77,7 +77,11 @@ jobs:
           PY
 
       - name: Lint
-        run: ruff check src tests
+        run: ruff check src tests experiments
+
+      - name: Type check
+        if: matrix.python-version == '3.12'
+        run: mypy src
 
       - name: Test core with coverage
         run: >-
@@ -85,7 +89,11 @@ jobs:
           --cov=finspace
           --cov-config=.coveragerc-core
           --cov-report=term-missing
-          --cov-fail-under=75
+          --cov-fail-under=90
+
+      - name: Quick evidence smoke test
+        if: matrix.python-version == '3.12'
+        run: python -m experiments.reproduce --output /tmp/finspace-evidence --quick
 
       - name: Build and verify distributions
         if: matrix.python-version == '3.12'
@@ -131,11 +139,24 @@ jobs:
           python -c "from importlib.metadata import version; assert version('pdrs') == '0.2.0'"
           pdrs --help >/dev/null
 
-      - name: Test finance adapters
-        run: pytest tests/test_adapters.py tests/test_batch.py tests/test_templates.py
+      - name: Test finance adapters and negative controls
+        run: >-
+          pytest
+          tests/test_adapters.py
+          tests/test_batch.py
+          tests/test_templates.py
+          tests/test_negative_controls.py
 
       - name: Run documented examples
         run: |
           python examples/basic_usage.py
           python examples/quantlib_runner.py
           finspace --version
+
+      - name: Run full evidence suite
+        run: python -m experiments.reproduce --output evidence/generated
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: finspace-evidence
+          path: evidence/generated/
