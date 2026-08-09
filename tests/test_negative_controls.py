@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from finspace import RecordValidationError, Schema, Space
+from finspace import Field, RecordValidationError, Schema, Space
 from finspace.adapters import ISO20022PaymentBuilder, QuantLibEuropeanOptionPricer
 from finspace.replay import ReplayLedger, build_execution_identity, build_object_identity
 from finspace.templates import european_option_space, fix_order_space, iso20022_payment_space
@@ -50,7 +50,7 @@ def test_quantlib_adapter_rejects_unsupported_engine() -> None:
 
 
 def test_replay_verifier_distinguishes_each_mismatch_class() -> None:
-    space = Space(Schema.from_dict({"name": "replay-negative", "fields": [{"name": "x", "values": [1, 2]}]}))
+    space = Space(Schema(name="replay-negative", fields=(Field.enum("x", (1, 2)),)))
     environment = {"python": "3.12", "calendar": "NullCalendar"}
     oracle = {"name": "reference", "tolerance": 0.0}
     parameters = {"workers": 1}
