@@ -43,7 +43,7 @@ def reproduce_all(output: Path, *, quick: bool = False) -> dict[str, Any]:
     if not verify_artifact_manifest(output, data_entries):
         raise AssertionError("generated evidence does not match its artifact manifest")
 
-    archive_paths = data_paths + [Path("MANIFEST.json"), Path("SHA256SUMS.txt")]
+    archive_paths = [*data_paths, Path("MANIFEST.json"), Path("SHA256SUMS.txt")]
     archive_entries = build_artifact_manifest(output, archive_paths)
     archive = build_reproducible_zip(output, archive_entries, output / "finspace-evidence.zip")
     result = {
