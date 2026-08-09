@@ -1,6 +1,9 @@
 from __future__ import annotations
 
-from hypothesis import given, settings, strategies as st
+import itertools
+
+from hypothesis import given, settings
+from hypothesis import strategies as st
 
 from finspace import Condition, Field, RecordValidationError, Schema, Space
 
@@ -63,7 +66,7 @@ def test_partitions_are_exact_for_arbitrary_worker_counts(worker_count: int) -> 
     assert partitions[0].start == 0
     assert partitions[-1].stop == ORDERS.count
     assert sum(len(partition) for partition in partitions) == ORDERS.count
-    for left, right in zip(partitions, partitions[1:], strict=False):
+    for left, right in itertools.pairwise(partitions):
         assert left.stop == right.start
     sizes = [len(partition) for partition in partitions]
     assert max(sizes) - min(sizes) <= 1
