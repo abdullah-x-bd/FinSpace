@@ -91,10 +91,6 @@ jobs:
           --cov-report=term-missing
           --cov-fail-under=90
 
-      - name: Quick evidence smoke test
-        if: matrix.python-version == '3.12'
-        run: python -m experiments.reproduce --output /tmp/finspace-evidence --quick
-
       - name: Build and verify distributions
         if: matrix.python-version == '3.12'
         run: |
@@ -117,7 +113,7 @@ jobs:
           path: dist/
 
   integrations:
-    name: Finance integrations
+    name: Finance integrations and evidence
     runs-on: ubuntu-latest
 
     steps:
