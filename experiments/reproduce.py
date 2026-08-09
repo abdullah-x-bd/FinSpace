@@ -58,8 +58,7 @@ def profile(size: int) -> Profile:
     currencies = tuple(f"C{i:02d}" for i in range(size))
     all_rates = tuple(round(-0.02 + 0.005 * i, 6) for i in range(size))
     rates_by_currency = {
-        currency: all_rates[: 1 + index % size]
-        for index, currency in enumerate(currencies)
+        currency: all_rates[: 1 + index % size] for index, currency in enumerate(currencies)
     }
     spots = tuple(float(80 + i) for i in range(size * 2))
     strikes = tuple(float(80 + i) for i in range(size * 2))
@@ -175,9 +174,7 @@ def benchmark_scalability(*, quick: bool) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for size in sizes:
         item = profile(size)
-        space, seconds, peak_bytes = measure(
-            lambda item=item: Space(schema_for_profile(item))
-        )
+        space, seconds, peak_bytes = measure(lambda item=item: Space(schema_for_profile(item)))
         rows.append(
             {
                 "size": size,
@@ -263,9 +260,7 @@ def partition_evidence(*, quick: bool) -> list[dict[str, Any]]:
     for worker_count in worker_counts:
         partitions = space.partitions(worker_count)
         sizes = [len(partition) for partition in partitions]
-        adjacent = all(
-            left.stop == right.start for left, right in itertools.pairwise(partitions)
-        )
+        adjacent = all(left.stop == right.start for left, right in itertools.pairwise(partitions))
         complete = (
             partitions[0].start == 0
             and partitions[-1].stop == space.count

@@ -31,7 +31,9 @@ def test_object_and_execution_replay_are_separate() -> None:
         object_hash = ledger.record_object(object_identity, space.unrank(12))
         assert ledger.verify_object(space, object_hash) == "reconstructed"
 
-        environment = environment_manifest(extra={"calendar": "TARGET", "evaluation_date": "2026-08-04"})
+        environment = environment_manifest(
+            extra={"calendar": "TARGET", "evaluation_date": "2026-08-04"}
+        )
         oracle = {"name": "roundtrip", "tolerance": 0.0}
         parameters = {"worker": 0, "workers": 1}
         execution = build_execution_identity(
@@ -51,44 +53,56 @@ def test_object_and_execution_replay_are_separate() -> None:
             execution_parameters=parameters,
             result={"ok": True},
         )
-        assert ledger.verify_execution(
-            execution_hash,
-            adapter_name="reference",
-            adapter_version="2",
-            environment=environment,
-            oracle_config=oracle,
-            execution_parameters=parameters,
-            external_data_snapshot="sha256:data",
-            observed_result={"ok": True},
-        ) == "reproduced"
-        assert ledger.verify_execution(
-            execution_hash,
-            adapter_name="reference",
-            adapter_version="2",
-            environment={**environment, "machine": "other"},
-            oracle_config=oracle,
-            execution_parameters=parameters,
-            external_data_snapshot="sha256:data",
-        ) == "environment-mismatch"
-        assert ledger.verify_execution(
-            execution_hash,
-            adapter_name="reference",
-            adapter_version="2",
-            environment=environment,
-            oracle_config=oracle,
-            execution_parameters=parameters,
-            external_data_snapshot=None,
-        ) == "external-data-unavailable"
-        assert ledger.verify_execution(
-            execution_hash,
-            adapter_name="reference",
-            adapter_version="2",
-            environment=environment,
-            oracle_config=oracle,
-            execution_parameters=parameters,
-            external_data_snapshot="sha256:data",
-            observed_result={"ok": False},
-        ) == "result-divergence"
+        assert (
+            ledger.verify_execution(
+                execution_hash,
+                adapter_name="reference",
+                adapter_version="2",
+                environment=environment,
+                oracle_config=oracle,
+                execution_parameters=parameters,
+                external_data_snapshot="sha256:data",
+                observed_result={"ok": True},
+            )
+            == "reproduced"
+        )
+        assert (
+            ledger.verify_execution(
+                execution_hash,
+                adapter_name="reference",
+                adapter_version="2",
+                environment={**environment, "machine": "other"},
+                oracle_config=oracle,
+                execution_parameters=parameters,
+                external_data_snapshot="sha256:data",
+            )
+            == "environment-mismatch"
+        )
+        assert (
+            ledger.verify_execution(
+                execution_hash,
+                adapter_name="reference",
+                adapter_version="2",
+                environment=environment,
+                oracle_config=oracle,
+                execution_parameters=parameters,
+                external_data_snapshot=None,
+            )
+            == "external-data-unavailable"
+        )
+        assert (
+            ledger.verify_execution(
+                execution_hash,
+                adapter_name="reference",
+                adapter_version="2",
+                environment=environment,
+                oracle_config=oracle,
+                execution_parameters=parameters,
+                external_data_snapshot="sha256:data",
+                observed_result={"ok": False},
+            )
+            == "result-divergence"
+        )
         exported = ledger.export_manifest(execution_hash)
         assert exported["ledger_schema_version"] == 2
         assert exported["object"]["rank"] == 12

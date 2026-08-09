@@ -20,9 +20,7 @@ def test_fix_market_order_rejects_inactive_price() -> None:
 
 def test_iso_pain_record_rejects_pacs_only_priority() -> None:
     space = iso20022_payment_space()
-    pain = next(
-        record for record in space.enumerate() if record["message"] == "pain.001.001.13"
-    )
+    pain = next(record for record in space.enumerate() if record["message"] == "pain.001.001.13")
     with pytest.raises(RecordValidationError):
         space.rank({**pain, "priority": "HIGH"})
 
@@ -89,18 +87,26 @@ def test_replay_verifier_distinguishes_each_mismatch_class() -> None:
         }
         assert ledger.verify_execution(**common, observed_result=result) == "reproduced"
         assert ledger.verify_execution(**{**common, "adapter_version": "2"}) == "adapter-mismatch"
-        assert ledger.verify_execution(
-            **{**common, "environment": {**environment, "calendar": "TARGET"}}
-        ) == "environment-mismatch"
-        assert ledger.verify_execution(
-            **{**common, "oracle_config": {"name": "reference", "tolerance": 1e-6}}
-        ) == "oracle-mismatch"
-        assert ledger.verify_execution(
-            **{**common, "execution_parameters": {"workers": 2}}
-        ) == "execution-parameters-mismatch"
-        assert ledger.verify_execution(
-            **{**common, "external_data_snapshot": None}
-        ) == "external-data-unavailable"
-        assert ledger.verify_execution(
-            **common, observed_result={"value": 2.0}
-        ) == "result-divergence"
+        assert (
+            ledger.verify_execution(
+                **{**common, "environment": {**environment, "calendar": "TARGET"}}
+            )
+            == "environment-mismatch"
+        )
+        assert (
+            ledger.verify_execution(
+                **{**common, "oracle_config": {"name": "reference", "tolerance": 1e-6}}
+            )
+            == "oracle-mismatch"
+        )
+        assert (
+            ledger.verify_execution(**{**common, "execution_parameters": {"workers": 2}})
+            == "execution-parameters-mismatch"
+        )
+        assert (
+            ledger.verify_execution(**{**common, "external_data_snapshot": None})
+            == "external-data-unavailable"
+        )
+        assert (
+            ledger.verify_execution(**common, observed_result={"value": 2.0}) == "result-divergence"
+        )

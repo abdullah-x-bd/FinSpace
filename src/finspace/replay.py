@@ -59,7 +59,9 @@ class ObjectIdentity:
     def validate(self) -> None:
         if not self.canonicalization_version:
             raise ValueError("canonicalization_version is required")
-        if len(self.schema_hash) != 64 or any(ch not in "0123456789abcdef" for ch in self.schema_hash.lower()):
+        if len(self.schema_hash) != 64 or any(
+            ch not in "0123456789abcdef" for ch in self.schema_hash.lower()
+        ):
             raise ValueError("schema_hash must be a hexadecimal SHA-256 digest")
         if isinstance(self.rank, bool) or not isinstance(self.rank, int) or self.rank < 0:
             raise ValueError("rank must be a non-negative integer")
@@ -206,7 +208,9 @@ class ReplayLedger:
                 (LEDGER_SCHEMA_VERSION, _utc_now()),
             )
         elif current > LEDGER_SCHEMA_VERSION:
-            raise RuntimeError(f"ledger schema {current} is newer than supported {LEDGER_SCHEMA_VERSION}")
+            raise RuntimeError(
+                f"ledger schema {current} is newer than supported {LEDGER_SCHEMA_VERSION}"
+            )
         self.connection.commit()
 
     def record_object(self, identity: ObjectIdentity, record: Mapping[str, Any]) -> str:
@@ -261,7 +265,9 @@ class ReplayLedger:
         if parameters_hash != identity.execution_parameters_hash:
             raise ValueError("execution_parameters_hash does not match the canonical parameters")
         result_json = None if result is None else canonical_json(result).decode("utf-8")
-        result_hash = None if result_json is None else hashlib.sha256(result_json.encode("utf-8")).hexdigest()
+        result_hash = (
+            None if result_json is None else hashlib.sha256(result_json.encode("utf-8")).hexdigest()
+        )
         identity_hash = identity.identity_hash
         with self.connection:
             self.connection.execute(
