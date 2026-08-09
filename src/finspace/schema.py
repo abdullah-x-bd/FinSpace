@@ -73,6 +73,78 @@ class Case:
 
 
 @dataclass(frozen=True)
+class TableConstraint:
+    """An exact finite relation over two or more schema fields.
+
+    A partial context is viable when at least one allowed row agrees with every
+    constrained field already assigned. Once every constrained field is present,
+    the resulting tuple must be one of the declared rows. Constraints therefore
+    remain exactly countable and can be pruned during compilation.
+    """
+
+    fields: tuple[str, ...]
+    allowed: tuple[tuple[JSONValue, ...], ...]
+    description: str | None = None
+
+    def __post_init__(self) -> None:
+        if len(self.fields) < 2:
+            raise SchemaDefinitionError("table constraints require at least two fields")
+        if any(not name for name in self.fields):
+            raise SchemaDefinitionError("constraint field names cannot be empty")
+        if len(set(self.fields)) != len(self.fields):
+            raise SchemaDefinitionError("constraint field names must be unique")
+        if not self.allowed:
+            raise SchemaDefinitionError("table constraints require at least one allowed row")
+        keys: list[tuple[str, ...]] = []
+        normalized: list[tuple[JSONValue, ...]] = []
+        for row in self.allowed:
+            row_tuple = tuple(row)
+            if len(row_tuple) != len(self.fields):
+                raise SchemaDefinitionError(
+                    "constraint rows must have exactly one value for every constrained field"
+                )
+            canonical = tuple(_canonical(value) for value in row_tuple)
+            keys.append(canonical)
+            normalized.append(row_tuple)
+        if len(keys) != len(set(keys)):
+            raise SchemaDefinitionError("table constraint contains duplicate allowed rows")
+        object.__setattr__(self, "fields", tuple(self.fields))
+        object.__setattr__(self, "allowed", tuple(normalized))
+
+    def compatible(self, context: Mapping[str, JSONValue]) -> bool:
+        assigned = {
+            name: _canonical(context[name]) for name in self.fields if name in context
+        }
+        for row in self.allowed:
+            if all(_canonical(row[index]) == assigned[name] for index, name in enumerate(self.fields) if name in assigned):
+                return True
+        return False
+
+    def satisfied(self, context: Mapping[str, JSONValue]) -> bool:
+        if any(name not in context for name in self.fields):
+            return False
+        candidate = tuple(_canonical(context[name]) for name in self.fields)
+        return any(tuple(_canonical(value) for value in row) == candidate for row in self.allowed)
+
+    def to_dict(self) -> dict[str, Any]:
+        result: dict[str, Any] = {
+            "fields": list(self.fields),
+            "allowed": [list(row) for row in self.allowed],
+        }
+        if self.description:
+            result["description"] = self.description
+        return result
+
+    @classmethod
+    def from_dict(cls, raw: Mapping[str, Any]) -> TableConstraint:
+        return cls(
+            fields=tuple(str(name) for name in raw["fields"]),
+            allowed=tuple(tuple(row) for row in raw["allowed"]),
+            description=raw.get("description"),
+        )
+
+
+@dataclass(frozen=True)
 class Field:
     """One finite field in a scenario schema.
 
@@ -258,16 +330,19 @@ class Schema:
     version: str = "1"
     description: str | None = None
     metadata: Mapping[str, JSONValue] = field(default_factory=dict)
+    constraints: tuple[TableConstraint, ...] = ()
 
     def __post_init__(self) -> None:
         if not self.name:
             raise SchemaDefinitionError("schema name cannot be empty")
         object.__setattr__(self, "fields", tuple(self.fields))
+        object.__setattr__(self, "constraints", tuple(self.constraints))
         if not self.fields:
             raise SchemaDefinitionError("schema must contain at least one field")
         names = [field.name for field in self.fields]
         if len(names) != len(set(names)):
             raise SchemaDefinitionError("schema field names must be unique")
+        name_set = set(names)
         previous: set[str] = set()
         for field_spec in self.fields:
             missing = field_spec.dependencies() - previous
@@ -277,6 +352,12 @@ class Schema:
                     + ", ".join(sorted(missing))
                 )
             previous.add(field_spec.name)
+        for constraint in self.constraints:
+            unknown = set(constraint.fields) - name_set
+            if unknown:
+                raise SchemaDefinitionError(
+                    f"constraint references unknown fields: {', '.join(sorted(unknown))}"
+                )
         for key, value in self.metadata.items():
             if not isinstance(key, str):
                 raise SchemaDefinitionError("metadata keys must be strings")
@@ -313,6 +394,8 @@ class Schema:
             result["description"] = self.description
         if self.metadata:
             result["metadata"] = dict(self.metadata)
+        if self.constraints:
+            result["constraints"] = [constraint.to_dict() for constraint in self.constraints]
         return result
 
     @classmethod
@@ -323,6 +406,9 @@ class Schema:
             description=raw.get("description"),
             metadata=dict(raw.get("metadata", {})),
             fields=tuple(Field.from_dict(item) for item in raw["fields"]),
+            constraints=tuple(
+                TableConstraint.from_dict(item) for item in raw.get("constraints", ())
+            ),
         )
 
     @classmethod
@@ -359,11 +445,22 @@ class Schema:
         """Prior fields that can influence each remaining suffix.
 
         The compiler uses this to share equivalent suffix states instead of
-        materializing the full Cartesian tree.
+        materializing the full Cartesian tree. Table constraints add exactly the
+        already-assigned fields whose values can affect a still-unresolved row.
         """
-        relevant: list[frozenset[str]] = [frozenset() for _ in range(len(self.fields) + 1)]
+
+        size = len(self.fields)
+        positions = {field_spec.name: index for index, field_spec in enumerate(self.fields)}
+        relevant: list[set[str]] = [set() for _ in range(size + 1)]
         running: set[str] = set()
-        for index in range(len(self.fields) - 1, -1, -1):
+        for index in range(size - 1, -1, -1):
             running |= self.fields[index].dependencies()
-            relevant[index] = frozenset(running)
-        return tuple(relevant)
+            relevant[index].update(running)
+        for index in range(size + 1):
+            for constraint in self.constraints:
+                constrained_positions = [positions[name] for name in constraint.fields]
+                if any(position >= index for position in constrained_positions):
+                    relevant[index].update(
+                        name for name in constraint.fields if positions[name] < index
+                    )
+        return tuple(frozenset(names) for names in relevant)

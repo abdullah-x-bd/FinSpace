@@ -51,9 +51,17 @@ class SchemaCompiler:
             sorted((name, _canonical(context[name])) for name in names if name in context)
         )
 
+    def _constraints_compatible(self, context: Mapping[str, JSONValue]) -> bool:
+        return all(constraint.compatible(context) for constraint in self.schema.constraints)
+
+    def _constraints_satisfied(self, context: Mapping[str, JSONValue]) -> bool:
+        return all(constraint.satisfied(context) for constraint in self.schema.constraints)
+
     def _build(self, index: int, context: dict[str, JSONValue]) -> str | None:
+        if not self._constraints_compatible(context):
+            return None
         if index == len(self.schema.fields):
-            return "end"
+            return "end" if self._constraints_satisfied(context) else None
         key = self._key(index, context)
         if key in self.memo:
             return self.memo[key]

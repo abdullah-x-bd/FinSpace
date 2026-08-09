@@ -88,6 +88,15 @@ jobs:
           src/finspace/space.py
           src/finspace/replay.py
           src/finspace/runner.py
+          src/finspace/weighted.py
+          src/finspace/allocation.py
+          src/finspace/evolution.py
+          src/finspace/shrink.py
+          src/finspace/identity.py
+          src/finspace/campaign.py
+          src/finspace/mutations.py
+          src/finspace/artifact.py
+          src/finspace/cluster.py
 
       - name: Test core with coverage
         run: >-
@@ -110,7 +119,7 @@ jobs:
           python -m pip uninstall -y finspace
           python -m pip install --no-deps dist/finspace-*.whl
           finspace --version
-          python -c "from finspace import Space; print('FinSpace wheel import passed')"
+          python -c "import finspace; assert finspace.__version__ == '0.2.0'; from finspace import TableConstraint, WeightedSampler; print('FinSpace 0.2 wheel import passed')"
 
       - uses: actions/upload-artifact@v4
         if: matrix.python-version == '3.12'
@@ -119,7 +128,7 @@ jobs:
           path: dist/
 
   integrations:
-    name: Finance integrations and evidence
+    name: Finance integrations and complete evidence
     runs-on: ubuntu-latest
 
     steps:
@@ -148,6 +157,7 @@ jobs:
           tests/test_batch.py
           tests/test_templates.py
           tests/test_negative_controls.py
+          tests/test_mutations_cluster_retry_final.py
 
       - name: Run documented examples
         run: |
@@ -155,8 +165,8 @@ jobs:
           python examples/quantlib_runner.py
           finspace --version
 
-      - name: Run full evidence suite
-        run: python -m experiments.reproduce --output evidence/generated
+      - name: Run complete 1-30 evidence package
+        run: python -m experiments.final_reproduce --output evidence/generated
 
       - uses: actions/upload-artifact@v4
         with:
